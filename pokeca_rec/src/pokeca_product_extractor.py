@@ -10,18 +10,16 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-chrome_opt = Options()
-chrome_opt.add_argument("--incognito")
-chrome_opt.add_argument("--headless")
-chrome_opt.add_argument("disable-extensions")
-chrome_opt.add_argument("disable-popup-blocking")
-chrome_opt.add_argument("disable-infobars")
+import sys
+from pathlib import Path
+sys.path.append('.')
+from pokeca_rec.utils.chrome_option import chrome_opt
 
 EMPTY_STR = "NaN"
 NOT_UNIQUE_COLS = ["card_code_jp", "img_url_jp", "rarity_code_jp"]
 
 
-class Extractor:
+class PokecaProductExtractor:
     def __init__(self) -> None:
         """Extract card data showed in https://www.pokemon-card.com/card-search/index.php?&regulation_sidebar_form=XY"""  # noqa: E501
         self.url = None
@@ -406,9 +404,10 @@ if __name__ == "__main__":
         "https://www.pokemon-card.com/card-search/details.php/card/44968/regu/XY",  # special energy # noqa: E501
         "https://www.pokemon-card.com/card-search/details.php/card/44950/regu/XY",  # basic energy # noqa: E501
     ]
+    
+    extractor = PokecaProductExtractor()
 
     for url in urls:
-        extractor = Extractor()
         detail_info = extractor(url)
         print(detail_info)
         print()
