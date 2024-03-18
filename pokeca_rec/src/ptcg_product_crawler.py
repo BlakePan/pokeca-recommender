@@ -19,7 +19,7 @@ EMPTY_STR = "NaN"
 NOT_UNIQUE_COLS = ["card_code_jp", "img_url_jp", "rarity_code_jp"]
 
 
-class PokecaProductExtractor:
+class PTCGProductCrawler:
     def __init__(self) -> None:
         """Extract card data showed in https://www.pokemon-card.com/card-search/index.php?&regulation_sidebar_form=XY"""  # noqa: E501
         self.url = None
@@ -405,7 +405,7 @@ if __name__ == "__main__":
         "https://www.pokemon-card.com/card-search/details.php/card/44950/regu/XY",  # basic energy # noqa: E501
     ]
     
-    extractor = PokecaProductExtractor()
+    extractor = PTCGProductCrawler()
 
     for url in urls:
         detail_info = extractor(url)
