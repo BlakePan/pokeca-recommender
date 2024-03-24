@@ -1,9 +1,12 @@
 import logging
 import os
+import re
+import sqlite3
 import sys
 import time
 import traceback
 from collections import defaultdict
+from sqlite3 import Connection, Cursor
 from typing import Dict, List
 
 from selenium import webdriver
@@ -15,6 +18,7 @@ from tqdm import tqdm
 sys.path.append(".")
 from pokeca_rec.src.deck_crawler import crawl_deck
 from pokeca_rec.utils.chrome_option import chrome_opt
+from pokeca_rec.utils.selenium_helper import find_element, find_elements
 
 # Create logging folder
 LOG_FOLDER = "logs"
@@ -31,12 +35,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# craw gym
-# https://pokecabook.com/archives/category/tournament/jim-battle/page/1
-
-
 def crawl_from_gym_page(
-    url: str, progress_bar: bool = False
+    url: str, progress_bar: bool = False, cursor: Cursor = None
 ) -> Dict[str, List[Dict]]:
     """
     Crawls a gym page specified by the URL and extracts information about
@@ -108,7 +108,10 @@ def crawl_from_gym_page(
                 )
                 for category, deck_url in pbar:
                     pbar.set_description(f"Crawling {deck_url.split('/')[-2]}")
-                    gym_decks[category].append(crawl_deck(deck_url=deck_url))
+                    res = crawl_deck(deck_url=deck_url, cursor=cursor)
+                    if not res:
+                        continue
+                    gym_decks[category].append(res)
 
         except Exception as e:
             logger.info(f"An error occurred crawl_from_gym_page: {e}")
@@ -124,6 +127,7 @@ def crawl_gym_decks(
     num_pages: int = 1,
     progress_bar_lv1: bool = False,
     progress_bar_lv2: bool = False,
+    card_db: str = "db/ptcg_card.db",
 ) -> Dict[str, Dict[str, List[Dict]]]:
     """
     Crawls multiple pages of gym decks starting from a specified page and
@@ -162,6 +166,16 @@ def crawl_gym_decks(
     ), f"""assume num_pages is int but got type: {type(num_pages)}.
     assuem num_pages >= 1 but got: {num_pages}"""
 
+    # connect to card db
+    try:
+        conn = sqlite3.connect(card_db)
+        cursor = conn.cursor()
+        logger.info(f"Load card db: {card_db} Success!")
+    except:
+        conn = None
+        cursor = None
+        logger.info(f"Load card db: {card_db} FAIL!")
+
     gym_decks = {}
     url = (
         "https://pokecabook.com/archives/category/tournament/jim-battle/page/"
@@ -197,15 +211,119 @@ def crawl_gym_decks(
                         .text
                     )
                     gym_decks[gym_date] = crawl_from_gym_page(
-                        gym_page_url, progress_bar=progress_bar_lv2
+                        gym_page_url,
+                        progress_bar=progress_bar_lv2,
+                        cursor=cursor,
                     )
             except Exception as e:
                 logger.info(f"An error occurred crawl_gym_decks: {e}")
                 logger.debug(e)
                 logger.debug(traceback.format_exc())
-                return None
+
+    if isinstance(conn, Connection):
+        conn.close()
 
     return gym_decks
+
+
+def crawl_deck_from_recipe_page(
+    recipe: str, url: str, deck_limits: int = 10, cursor: Cursor = None
+):
+    deck_recipes = defaultdict(list)
+
+    with webdriver.Chrome(options=chrome_opt) as driver:
+        # Initialize the web driver
+        driver.implicitly_wait(2)  # seconds
+        try:
+            driver.get(url)
+            deck_elems = find_elements(driver, By.CLASS_NAME, "wp-block-image")
+            num_decks = (
+                len(deck_elems)
+                if len(deck_elems) < deck_limits
+                else deck_limits
+            )
+            for deck_elem in deck_elems[:num_decks]:
+                href_element = find_elements(
+                    deck_elem,
+                    By.CSS_SELECTOR,
+                    "figcaption.wp-element-caption > a",
+                )[0]
+                url = href_element.get_attribute("href")
+                res = crawl_deck(deck_url=url, cursor=cursor)
+                deck_recipes[recipe].append(res)
+        except Exception as e:
+            logger.info(f"An error occurred crawl_deck_from_recipe_page: {e}")
+            logger.debug(e)
+            logger.debug(traceback.format_exc())
+
+    return deck_recipes
+
+
+def crawl_recipe_pages(
+    page_start: int,
+    num_pages: int = 1,
+    card_db: str = "db/ptcg_card.db",
+):
+
+    def get_recipe_name(title: str):
+        match = re.search(r"【(.*?)】", title)
+
+        # Check if a match was found
+        if match:
+            # The first group captures the text between '【' and '】'
+            extracted_text = match.group(1)
+            return extracted_text
+        else:
+            return title
+
+    # connect to card db
+    try:
+        conn = sqlite3.connect(card_db)
+        cursor = conn.cursor()
+    except:
+        conn = None
+        cursor = None
+
+    # crawl deck recipes
+    url = "https://pokecabook.com/archives/category/deck-recipe/page/{}"
+    deck_recipes = defaultdict(list)
+    for page_num in range(page_start, page_start + num_pages):
+        url_ = url.format(page_num)
+        with webdriver.Chrome(options=chrome_opt) as driver:
+            # Initialize the web driver
+            driver.implicitly_wait(2)  # seconds
+            try:
+                driver.get(url_)
+                recipe_elems = find_elements(
+                    driver,
+                    By.CLASS_NAME,
+                    "entry-card-wrap,a-wrap.border-element.cf",
+                )
+
+                for recipe_elem in tqdm(
+                    recipe_elems, desc=f"Processing page{page_num}"
+                ):
+                    if "デッキレシピ" not in recipe_elem.get_attribute(
+                        "title"
+                    ):
+                        continue
+                    title = recipe_elem.get_attribute("title")
+                    recipe = get_recipe_name(title)
+                    deck_recipe_url = recipe_elem.get_attribute("href")
+                    decks = crawl_deck_from_recipe_page(
+                        recipe, deck_recipe_url, cursor=cursor
+                    )
+                    deck_recipes.update(decks)
+
+            except Exception as e:
+                logger.info(f"An error occurred crawl_recipe_pages: {e}")
+                logger.debug(e)
+                logger.debug(traceback.format_exc())
+
+    if isinstance(conn, Connection):
+        conn.close()
+
+    return deck_recipes
 
 
 if __name__ == "__main__":
@@ -219,7 +337,6 @@ if __name__ == "__main__":
     t2 = time.time()
     pprint(gym_decks)
     print(f"time diff: {t2-t1}\n")
-
     print("crawl_gym_decks")
     t1 = time.time()
     gym_decks = crawl_gym_decks(
@@ -227,4 +344,11 @@ if __name__ == "__main__":
     )
     t2 = time.time()
     pprint(gym_decks)
+    print(f"time diff: {t2-t1}")
+
+    print("crawl_deck_recipe")
+    t1 = time.time()
+    deck_recipes = crawl_recipe_pages(1)
+    t2 = time.time()
+    pprint(deck_recipes)
     print(f"time diff: {t2-t1}")

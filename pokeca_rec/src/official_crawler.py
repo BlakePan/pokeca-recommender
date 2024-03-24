@@ -1,11 +1,12 @@
 import concurrent.futures
-import copy
 import logging
 import os
 import re
+import sqlite3
 import sys
 import threading
 import time
+from sqlite3 import Connection, Cursor
 from typing import Any, Dict, List, Union
 
 from selenium import webdriver
@@ -144,7 +145,8 @@ def extract_deck_meta(
 
 
 def crawl_deck_pages(
-    deck_metas: List[Dict[str, Any]]
+    deck_metas: List[Dict[str, Any]],
+    cursor: Cursor = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Crawl the pages of the given deck metadata in parallel using threads.
@@ -175,28 +177,19 @@ def crawl_deck_pages(
         date = deck_meta["date"]
         prefecture = deck_meta["prefecture"]
 
-        ret = crawl_deck(deck_url=url)
-
-        if ret is not None:
-            (
-                pokemon_dict,
-                tool_dict,
-                supporter_dict,
-                stadium_dict,
-                energy_dict,
-            ) = ret
-        else:
+        res = crawl_deck(deck_url=url, cursor=cursor)
+        if res is None:
             return
 
         temp_results.append(
             {
                 "deck_url": url,
                 "deck_code": deck_code,
-                "pokemons": pokemon_dict,
-                "tools": tool_dict,
-                "supporters": supporter_dict,
-                "stadiums": stadium_dict,
-                "energies": energy_dict,
+                "pokemons": res["pokemons"],
+                "tools": res["tools"],
+                "supporters": res["supporters"],
+                "stadiums": res["stadiums"],
+                "energies": res["energies"],
                 "rank": rank,
                 "num_players": num_players,
                 "date": date,
@@ -222,17 +215,6 @@ def crawl_deck_pages(
     with lock:
         results = temp_results.copy()
 
-    # # Update the results dictionary with the entire temp_results list
-    # with lock:
-    #     for result in temp_results:
-    #         categories = find_categories(
-    #             result["pokemons"], result["tools"], result["energies"]
-    #         )
-    #         for category in categories:
-    #             if category not in results:
-    #                 results[category] = []
-    #             results[category].append(result)
-
     return results
 
 
@@ -243,6 +225,7 @@ def crawl_event_pages(
     decks: Dict,
     skip_codes: List[str],
     num_pages: int = 1,
+    cursor: Cursor = None,
 ) -> None:
     """
     Parse a given event page and collect metadata of available decks.
@@ -334,7 +317,7 @@ def crawl_event_pages(
         # wait for results
         logger.debug(deck_metas)
         t1 = time.time()
-        results = crawl_deck_pages(deck_metas)
+        results = crawl_deck_pages(deck_metas, cursor=cursor)
         t2 = time.time()
         logger.debug(f"Page Time diff part2: {t2-t1}")
 
@@ -343,10 +326,6 @@ def crawl_event_pages(
             decks[date_str] = results
         else:
             decks[date_str] += results
-        # for category in results:
-        #     if category not in decks:
-        #         decks[category] = []
-        #     decks[category] += results[category]
 
 
 def crawl_result_pages(
@@ -356,6 +335,7 @@ def crawl_result_pages(
     event_page_limit: int = 100,
     deck_page_limit: int = 1,
     start_page_num: int = 1,
+    card_db: str = "db/ptcg_card.db",
 ) -> None:
     """Parses CL event links and metadata from the official website.
 
@@ -402,6 +382,14 @@ def crawl_result_pages(
     )
     offset = (start_page_num - 1) * 20
 
+    # connect to card db
+    try:
+        conn = sqlite3.connect(card_db)
+        cursor = conn.cursor()
+    except:
+        conn = None
+        cursor = None
+
     # parse CL/ChpL event links from official website
     decks = {}
     url = f"https://players.pokemon-card.com/event/result/list?offset={offset}"
@@ -409,7 +397,6 @@ def crawl_result_pages(
         try:
             # Initialize the web driver
             driver.implicitly_wait(2)  # seconds
-            # Navigate to the result page
             driver.get(url)
         except Exception as e:
             if isinstance(e, WebDriverException):
@@ -428,38 +415,38 @@ def crawl_result_pages(
             logger.info(f"Processing result page: {result_page_cnt}")
             try:
                 events = find_elements(driver, By.CLASS_NAME, "eventListItem")
-                pbar = tqdm(events)
-                for event in pbar:
-                    pbar.set_description(
-                        f"Processing result page: {result_page_cnt}"
-                    )
+                for event in tqdm(
+                    events, desc=f"Processing result page: {result_page_cnt}"
+                ):
                     title = find_elements(
                         event, By.CLASS_NAME, "title", wait_time=5
                     )[0]
-                    if league in title.text:
-                        event_meta = get_event_meta(event)
+                    if league not in title.text:
+                        continue
 
-                        t1 = time.time()
-                        crawl_event_pages(
-                            event_meta["event_link"],
-                            event_meta["num_players"],
-                            event_meta["prefecture"],
-                            decks,
-                            skip_codes,
-                            deck_page_limit,
-                        )
-                        t2 = time.time()
-                        logger.debug(f"Event Time diff part1: {t2 - t1}")
+                    event_meta = get_event_meta(event)
 
-                        event_page_cnt += 1
-                        if event_page_cnt >= event_page_limit:
-                            break
+                    t1 = time.time()
+                    crawl_event_pages(
+                        event_meta["event_link"],
+                        event_meta["num_players"],
+                        event_meta["prefecture"],
+                        decks=decks,
+                        skip_codes=skip_codes,
+                        num_pages=deck_page_limit,
+                        cursor=cursor,
+                    )
+                    t2 = time.time()
+                    logger.debug(f"Event Time diff part1: {t2 - t1}")
+
+                    event_page_cnt += 1
+                    if event_page_cnt >= event_page_limit:
+                        break
 
             except Exception as e:
                 # Error handling:
                 # - log exception
                 # - skip this result page
-                # - and restore decks
                 if isinstance(e, WebDriverException):
                     logger.info("WebDriverException when parsing event link")
                     logger.info(
@@ -485,68 +472,69 @@ def crawl_result_pages(
                 logger.debug(e)
                 break
 
+    if isinstance(conn, Connection):
+        conn.close()
+
     return decks
 
 
 if __name__ == "__main__":
     from pprint import pprint
 
-    deck_metas = [
-        {
-            "url": "https://www.pokemon-card.com/deck/confirm.html/deckID/NgnHHn-0Aixqe-iLniHL",
-            "deck_code": "NgnHHn-0Aixqe-iLniHL",
-            "rank": 1,
-            "num_players": 64,
-            "date": "2024年03月20日(水)",
-            "prefecture": "神奈川県",
-        },
-        {
-            "url": "https://www.pokemon-card.com/deck/confirm.html/deckID/NNngQn-3H6pJe-QL6iLH",
-            "deck_code": "NNngQn-3H6pJe-QL6iLH",
-            "rank": 2,
-            "num_players": 64,
-            "date": "2024年03月20日(水)",
-            "prefecture": "神奈川県",
-        },
-    ]
-    print("crawl_deck_pages()")
-    t1 = time.time()
-    res = crawl_deck_pages(deck_metas)
-    t2 = time.time()
-    pprint(res)
-    print(f"Ouput size: {len(res)}")
-    print(f"Crawling time: {t2 - t1}")
-    print()
-
-    print("crawl_event_pages")
-    decks = {}
-    t1 = time.time()
-    crawl_event_pages(
-        event_link="https://players.pokemon-card.com/event/detail/308221/result",
-        num_players=64,
-        prefecture="東京都",
-        decks=decks,
-        skip_codes=[],
-    )
-    t2 = time.time()
-    pprint(decks)
-    print(f"Ouput size: {len(decks)}")
-    print(f"Crawling time: {t2 - t1}")
-    print()
-
-    print("crawl_result_pages() for Champion")
-    t1 = time.time()
-    decks = crawl_result_pages(
-        league="Champion",
-        result_page_limit=1,
-        deck_page_limit=1,
-        start_page_num=17,
-    )
-    t2 = time.time()
-    pprint(decks)
-    print(f"Ouput size: {len(decks)}")
-    print(f"Crawling time: {t2 - t1}")
-    print()
+    # deck_metas = [
+    #     {
+    #         "url": "https://www.pokemon-card.com/deck/confirm.html/deckID/NgnHHn-0Aixqe-iLniHL",
+    #         "deck_code": "NgnHHn-0Aixqe-iLniHL",
+    #         "rank": 1,
+    #         "num_players": 64,
+    #         "date": "2024年03月20日(水)",
+    #         "prefecture": "神奈川県",
+    #     },
+    #     {
+    #         "url": "https://www.pokemon-card.com/deck/confirm.html/deckID/NNngQn-3H6pJe-QL6iLH",
+    #         "deck_code": "NNngQn-3H6pJe-QL6iLH",
+    #         "rank": 2,
+    #         "num_players": 64,
+    #         "date": "2024年03月20日(水)",
+    #         "prefecture": "神奈川県",
+    #     },
+    # ]
+    # print("crawl_deck_pages()")
+    # t1 = time.time()
+    # res = crawl_deck_pages(deck_metas)
+    # t2 = time.time()
+    # pprint(res)
+    # print(f"Ouput size: {len(res)}")
+    # print(f"Crawling time: {t2 - t1}")
+    # print()
+    # print("crawl_event_pages")
+    # decks = {}
+    # t1 = time.time()
+    # crawl_event_pages(
+    #     event_link="https://players.pokemon-card.com/event/detail/308221/result",
+    #     num_players=64,
+    #     prefecture="東京都",
+    #     decks=decks,
+    #     skip_codes=[],
+    # )
+    # t2 = time.time()
+    # pprint(decks)
+    # print(f"Ouput size: {len(decks)}")
+    # print(f"Crawling time: {t2 - t1}")
+    # print()
+    # print("crawl_result_pages() for Champion")
+    # t1 = time.time()
+    # decks = crawl_result_pages(
+    #     league="Champion",
+    #     result_page_limit=1,
+    #     deck_page_limit=1,
+    #     start_page_num=17,
+    # )
+    # t2 = time.time()
+    # pprint(decks)
+    # print(f"Ouput size: {len(decks)}")
+    # print(f"Crawling time: {t2 - t1}")
+    # print()
 
     print("crawl_result_pages() for City")
     t1 = time.time()

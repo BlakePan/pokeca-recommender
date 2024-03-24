@@ -223,7 +223,13 @@ def crawl_deck(
             logger.debug(traceback.format_exc())
             return None
 
-    return pokemon_dict, tool_dict, supporter_dict, stadium_dict, energy_dict
+    return {
+        "pokemons": pokemon_dict,
+        "tools": tool_dict,
+        "supporters": supporter_dict,
+        "stadiums": stadium_dict,
+        "energies": energy_dict,
+    }
 
 
 if __name__ == "__main__":
@@ -244,27 +250,21 @@ if __name__ == "__main__":
 
     print("crawl_deck():")
     t1 = time.time()
-    (
-        pokemon_dict,
-        tool_dict,
-        supporter_dict,
-        stadium_dict,
-        energy_dict,
-    ) = crawl_deck(
+    ret = crawl_deck(
         deck_id="2SXUSR-h31cri-RpyXMM", # check card code of リザードンex
         cursor=cursor,
     )
     t2 = time.time()
     print("pokemon_dict")
-    pprint(pokemon_dict)
+    pprint(ret["pokemons"])
     print("tool_dict")
-    pprint(tool_dict)
+    pprint(ret["tools"])
     print("supporter_dict")
-    pprint(supporter_dict)
+    pprint(ret["supporters"])
     print("stadium_dict")
-    pprint(stadium_dict)
+    pprint(ret["stadiums"])
     print("energy_dict")
-    pprint(energy_dict)
+    pprint(ret["energies"])
     print(f"time diff: {t2-t1}")
     print("\n")
 
