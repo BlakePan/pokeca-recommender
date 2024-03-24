@@ -3,31 +3,23 @@ import copy
 import logging
 import os
 import re
+import sys
 import threading
 import time
-import traceback
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Union
 
 from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException, WebDriverException
+from selenium.common.exceptions import (NoSuchElementException,
+                                        WebDriverException)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
 from tqdm import tqdm
 
-import sys
-from pathlib import Path
-
 sys.path.append(".")
+from pokeca_rec.src.deck_crawler import crawl_deck
 from pokeca_rec.utils.chrome_option import chrome_opt
 from pokeca_rec.utils.font import full2half
-from pokeca_rec.src.deck_crawler import crawl_deck
-from pokeca_rec.utils.selenium_helper import (
-    find_elements,
-    wait_invisibility,
-    find_element_clickable,
-)
+from pokeca_rec.utils.selenium_helper import find_elements, wait_invisibility
 
 # Create logging folder
 LOG_FOLDER = "logs"
@@ -58,7 +50,10 @@ def wait_loading_circle(driver, timeout: int = 20):
         within the specified timeout.
     """
     wait_invisibility(
-        driver, By.XPATH, "//div[@class='sk-circle-container']", wait_time=timeout
+        driver,
+        By.XPATH,
+        "//div[@class='sk-circle-container']",
+        wait_time=timeout,
     )
 
 
@@ -77,7 +72,9 @@ def get_event_meta(event_element: WebElement) -> Dict[str, Union[int, str]]:
         the number of players and the string value for the event link.
     """
 
-    num_players_str = find_elements(event_element, By.CLASS_NAME, "capacity")[0].text
+    num_players_str = find_elements(
+        event_element, By.CLASS_NAME, "capacity", wait_time=5
+    )[0].text
     num_players = re.findall(r"\d+", num_players_str)
     num_players = (
         int(num_players[0])
@@ -87,7 +84,9 @@ def get_event_meta(event_element: WebElement) -> Dict[str, Union[int, str]]:
 
     event_link = event_element.get_attribute("href")
 
-    address = find_elements(event_element, By.CLASS_NAME, "building")[0].text
+    address = find_elements(
+        event_element, By.CLASS_NAME, "building", wait_time=5
+    )[0].text
     address = full2half(address)
     for prefecture_name in ["県", "都", "府", "北海道"]:
         if prefecture_name in address:
@@ -104,7 +103,9 @@ def get_event_meta(event_element: WebElement) -> Dict[str, Union[int, str]]:
     }
 
 
-def extract_deck_meta(deck_elem: WebElement, skip_codes: List[str]) -> Dict[str, Any]:
+def extract_deck_meta(
+    deck_elem: WebElement, skip_codes: List[str]
+) -> Dict[str, Any]:
     """Parses metadata for a deck from a WebElement
     representing a deck in a deck list table.
 
@@ -120,7 +121,10 @@ def extract_deck_meta(deck_elem: WebElement, skip_codes: List[str]) -> Dict[str,
 
     # Extract the URL for the deck element
     url = find_elements(
-        find_elements(deck_elem, By.CLASS_NAME, "deck")[0], By.TAG_NAME, "a"
+        find_elements(deck_elem, By.CLASS_NAME, "deck", wait_time=5)[0],
+        By.TAG_NAME,
+        "a",
+        wait_time=5,
     )[0].get_property("href")
 
     # Extract the deck code from the URL
@@ -129,7 +133,7 @@ def extract_deck_meta(deck_elem: WebElement, skip_codes: List[str]) -> Dict[str,
         return None
 
     # Extract the rank of the deck element
-    tag = find_elements(deck_elem, By.TAG_NAME, "td")[0]
+    tag = find_elements(deck_elem, By.TAG_NAME, "td", wait_time=5)[0]
     rank = int(tag.get_attribute("class").split("-")[-1])
 
     return {
@@ -200,7 +204,9 @@ def crawl_deck_pages(
             }
         )
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=os.cpu_count()
+    ) as executor:
         # Create a task for each deck
         threads = []
         for deck_meta in deck_metas:
@@ -271,7 +277,9 @@ def crawl_event_pages(
         page_cnt = 0
         while page_cnt < num_pages:
             # Collect metadata of available decks
-            deck_elems = find_elements(driver, By.CLASS_NAME, "c-rankTable-row")
+            deck_elems = find_elements(
+                driver, By.CLASS_NAME, "c-rankTable-row", wait_time=5
+            )
             for deck_idx, deck_elem in enumerate(deck_elems):
                 try:
                     deck_meta = extract_deck_meta(deck_elem, skip_codes)
@@ -342,16 +350,18 @@ def crawl_event_pages(
 
 
 def crawl_result_pages(
-    decks: Dict,
+    league: str,
     skip_codes: List[int] = None,
     result_page_limit: int = 10,
     event_page_limit: int = 100,
     deck_page_limit: int = 1,
+    start_page_num: int = 1,
 ) -> None:
     """Parses CL event links and metadata from the official website.
 
     Args:
-        decks (Dict): A dictionary to store the parsed CL event data.
+        league (str):
+        "City" or "Champion" league.
 
         skip_codes (List[int], optional):
         A list of deck codes to skip. Defaults to None.
@@ -369,11 +379,32 @@ def crawl_result_pages(
         If num_pages = 1, parse pages for top-8.
         If num_pages = 2, parse pages for top-16.
         And so on.
-    """
-    skip_codes = [] if skip_codes is None else skip_codes
 
-    # parse CL event links from official website
-    url = "https://players.pokemon-card.com/event/result/list"
+        start_page_num (int, optional):
+        The number for first event page to crawl. Default to 1.
+
+        Returns:
+        decks (Dict): A dictionary to store the parsed CL event data.
+    """
+    if league not in ["City", "Champion"]:
+        raise ValueError(
+            f'Only support "City" or "Champion" league, input is {league}'
+        )
+    if league == "Champion":
+        league = "チャンピオンズリーグ"
+    elif league == "City":
+        league = "シティリーグ"
+    skip_codes = [] if skip_codes is None else skip_codes
+    start_page_num = (
+        start_page_num
+        if isinstance(start_page_num, int) and start_page_num >= 1
+        else 1
+    )
+    offset = (start_page_num - 1) * 20
+
+    # parse CL/ChpL event links from official website
+    decks = {}
+    url = f"https://players.pokemon-card.com/event/result/list?offset={offset}"
     with webdriver.Chrome(options=chrome_opt) as driver:
         try:
             # Initialize the web driver
@@ -390,16 +421,22 @@ def crawl_result_pages(
 
         result_page_cnt = 0
         event_page_cnt = 0
-        while result_page_cnt < result_page_limit and event_page_cnt < event_page_limit:
+        while (
+            result_page_cnt < result_page_limit
+            and event_page_cnt < event_page_limit
+        ):
             logger.info(f"Processing result page: {result_page_cnt}")
-            decks_copy = copy.deepcopy(decks)  # backup
             try:
                 events = find_elements(driver, By.CLASS_NAME, "eventListItem")
                 pbar = tqdm(events)
                 for event in pbar:
-                    pbar.set_description(f"Processing result page: {result_page_cnt}")
-                    title = find_elements(event, By.CLASS_NAME, "title")[0]
-                    if "シティリーグ" in title.text:
+                    pbar.set_description(
+                        f"Processing result page: {result_page_cnt}"
+                    )
+                    title = find_elements(
+                        event, By.CLASS_NAME, "title", wait_time=5
+                    )[0]
+                    if league in title.text:
                         event_meta = get_event_meta(event)
 
                         t1 = time.time()
@@ -435,8 +472,6 @@ def crawl_result_pages(
                 logger.debug(e)
                 logger.debug(f"Processing result page: {result_page_cnt}")
 
-                decks = copy.deepcopy(decks_copy)  # restore
-
             # nevigate to the next result page
             result_page_cnt += 1
             try:
@@ -449,6 +484,8 @@ def crawl_result_pages(
                     logger.info("Next event page not found")
                 logger.debug(e)
                 break
+
+    return decks
 
 
 if __name__ == "__main__":
@@ -473,12 +510,17 @@ if __name__ == "__main__":
         },
     ]
     print("crawl_deck_pages()")
+    t1 = time.time()
     res = crawl_deck_pages(deck_metas)
+    t2 = time.time()
     pprint(res)
+    print(f"Ouput size: {len(res)}")
+    print(f"Crawling time: {t2 - t1}")
     print()
 
     print("crawl_event_pages")
     decks = {}
+    t1 = time.time()
     crawl_event_pages(
         event_link="https://players.pokemon-card.com/event/detail/308221/result",
         num_players=64,
@@ -486,10 +528,33 @@ if __name__ == "__main__":
         decks=decks,
         skip_codes=[],
     )
+    t2 = time.time()
     pprint(decks)
+    print(f"Ouput size: {len(decks)}")
+    print(f"Crawling time: {t2 - t1}")
     print()
 
-    print("crawl_result_pages()")
-    decks = {}
-    crawl_result_pages(decks=decks, result_page_limit=1, deck_page_limit=1)
+    print("crawl_result_pages() for Champion")
+    t1 = time.time()
+    decks = crawl_result_pages(
+        league="Champion",
+        result_page_limit=1,
+        deck_page_limit=1,
+        start_page_num=17,
+    )
+    t2 = time.time()
     pprint(decks)
+    print(f"Ouput size: {len(decks)}")
+    print(f"Crawling time: {t2 - t1}")
+    print()
+
+    print("crawl_result_pages() for City")
+    t1 = time.time()
+    decks = crawl_result_pages(
+        league="City", result_page_limit=1, deck_page_limit=1, start_page_num=1
+    )
+    t2 = time.time()
+    pprint(decks)
+    print(f"Ouput size: {len(decks)}")
+    print(f"Crawling time: {t2 - t1}")
+    print()

@@ -1,28 +1,20 @@
-import concurrent.futures
-import copy
 import logging
 import os
-import re
-import threading
+import sys
 import time
 import traceback
-from typing import Any, Dict, List, Tuple, Union
+from collections import defaultdict
+from typing import Dict, List
 
 from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException, WebDriverException
 from selenium.webdriver.common.by import By
-from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from tqdm import tqdm
-from collections import defaultdict
-
-import sys
-from pathlib import Path
 
 sys.path.append(".")
-from pokeca_rec.utils.chrome_option import chrome_opt
 from pokeca_rec.src.deck_crawler import crawl_deck
+from pokeca_rec.utils.chrome_option import chrome_opt
 
 # Create logging folder
 LOG_FOLDER = "logs"
@@ -41,13 +33,11 @@ logger = logging.getLogger(__name__)
 
 # craw gym
 # https://pokecabook.com/archives/category/tournament/jim-battle/page/1
-# craw city league
-# https://pokecabook.com/archives/category/tournament/city-league
-# craw champio league
-# https://pokecabook.com/archives/category/tournament/champions
 
 
-def crawl_from_gym_page(url: str, progress_bar: bool = False) -> Dict[str, List[Dict]]:
+def crawl_from_gym_page(
+    url: str, progress_bar: bool = False
+) -> Dict[str, List[Dict]]:
     """
     Crawls a gym page specified by the URL and extracts information about
     gym decks, including their categories and URLs.
@@ -79,7 +69,8 @@ def crawl_from_gym_page(url: str, progress_bar: bool = False) -> Dict[str, List[
                     EC.visibility_of_all_elements_located(
                         (
                             By.CSS_SELECTOR,
-                            ".wp-block-heading.has-medium-font-size:not(.has-text-align-center)",
+                            ".wp-block-heading.has-medium-font-size:"
+                            "not(.has-text-align-center)",
                         )
                     )
                 )
@@ -88,7 +79,9 @@ def crawl_from_gym_page(url: str, progress_bar: bool = False) -> Dict[str, List[
                     deck_categories.append(
                         (
                             WebDriverWait(dc_item, 10).until(
-                                EC.presence_of_element_located((By.TAG_NAME, "span"))
+                                EC.presence_of_element_located(
+                                    (By.TAG_NAME, "span")
+                                )
                             )
                         ).text
                     )
@@ -98,7 +91,9 @@ def crawl_from_gym_page(url: str, progress_bar: bool = False) -> Dict[str, List[
                     )
                 )
                 deck_urls = [
-                    du_item.find_element(By.TAG_NAME, "a").get_attribute("href")
+                    du_item.find_element(By.TAG_NAME, "a").get_attribute(
+                        "href"
+                    )
                     for du_item in deck_urls
                 ]
 
@@ -108,7 +103,9 @@ def crawl_from_gym_page(url: str, progress_bar: bool = False) -> Dict[str, List[
                     but got len(deck_categories) = {len(deck_categories)},
                     len(deck_urls) = {len(deck_urls)}"""
 
-                pbar = tqdm(zip(deck_categories, deck_urls), disable=not progress_bar)
+                pbar = tqdm(
+                    zip(deck_categories, deck_urls), disable=not progress_bar
+                )
                 for category, deck_url in pbar:
                     pbar.set_description(f"Crawling {deck_url.split('/')[-2]}")
                     gym_decks[category].append(crawl_deck(deck_url=deck_url))
@@ -166,7 +163,9 @@ def crawl_gym_decks(
     assuem num_pages >= 1 but got: {num_pages}"""
 
     gym_decks = {}
-    url = "https://pokecabook.com/archives/category/tournament/jim-battle/page/"
+    url = (
+        "https://pokecabook.com/archives/category/tournament/jim-battle/page/"
+    )
     for page_num in range(page_start, page_start + num_pages):
         url_ = url + str(page_num)
         with webdriver.Chrome(options=chrome_opt) as driver:
@@ -176,11 +175,16 @@ def crawl_gym_decks(
                 driver.get(url_)
                 list_items = WebDriverWait(driver, 10).until(
                     EC.visibility_of_all_elements_located(
-                        (By.CLASS_NAME, "entry-card-wrap.a-wrap.border-element.cf")
+                        (
+                            By.CLASS_NAME,
+                            "entry-card-wrap.a-wrap.border-element.cf",
+                        )
                     )
                 )
                 for list_item in tqdm(
-                    list_items, desc=f"page: {page_num}", disable=not progress_bar_lv1
+                    list_items,
+                    desc=f"page: {page_num}",
+                    disable=not progress_bar_lv1,
                 ):
                     gym_page_url = list_item.get_attribute("href")
                     gym_date = (
@@ -218,7 +222,9 @@ if __name__ == "__main__":
 
     print("crawl_gym_decks")
     t1 = time.time()
-    gym_decks = crawl_gym_decks(1, progress_bar_lv1=True, progress_bar_lv2=True)
+    gym_decks = crawl_gym_decks(
+        1, progress_bar_lv1=True, progress_bar_lv2=True
+    )
     t2 = time.time()
     pprint(gym_decks)
     print(f"time diff: {t2-t1}")
