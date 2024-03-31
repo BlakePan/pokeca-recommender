@@ -25,19 +25,28 @@ class DeckCategorizer:
 
     def __init__(
         self,
-        deck_recipes: Dict = None,
+        deck_recipes: Dict[str, List] = None,
         category_db_path: str = "db/deck_category.json",
     ):
         self.category_db_path = category_db_path
         self.category_db = None
-        try:
-            self.load()
-            logger.info("Load category db Sucess!")
-        except Exception as e:
-            logger.info("Load category db Fail!")
-            logger.info(str(e))
-            logger.info("Build category db")
-            self.init_category(deck_recipes)
+        if deck_recipes is not None:
+            try:
+                logger.info("Init by input deck recipes")
+                self.init_category(deck_recipes)
+            except Exception as e:
+                logger.info("Init by input deck recipes FAIL!")
+                logger.info("init a empty categorizer")
+                self.init_category({})
+        else:
+            try:
+                self.load()
+                logger.info("Load category db Sucess!")
+            except Exception as e:
+                logger.info("Load category db Fail!")
+                logger.info(str(e))
+                logger.info("Build category db")
+                self.init_category(deck_recipes)
 
     def __call__(self, deck: Dict, **kwds: Any) -> str:
         feature = self.preprocessing(deck)
@@ -76,35 +85,68 @@ class DeckCategorizer:
         v1: only use unique 'pokemon' name"""
 
         if deck.get("pokemons") is None:
+            logger.debug(f"{deck}")
             raise KeyError("deck missing key: 'pokemons'")
         feature = sorted(list(set(deck["pokemons"].keys())))
         return feature
 
     def get_intersection_cards(self, decks: List[Dict]) -> List[str]:
         intersection = set()
-        for i, deck in enumerate(decks):
-            if i == 0:
-                intersection = set(self.preprocessing(deck))
-            else:
-                intersection &= set(self.preprocessing(deck))
+        first = True
+        for deck in decks:
+            if not deck:
+                continue
+
+            try:
+                if first:
+                    intersection = set(self.preprocessing(deck))
+                    first = False
+                else:
+                    intersection &= set(self.preprocessing(deck))
+            except Exception as e:
+                logger.debug("Fail when finding intersections")
+                logger.debug(str(e))
+                continue
+
         intersection = list(intersection)
 
         return intersection
 
+    def merge_and_sum_decks(self, decks: List[Dict]) -> Dict[str, int]:
+        """Merges multiple dictionaries, summing values of common keys."""
+        result = {}
+        for deck in decks:
+            if not deck: continue
+
+            for key, value in deck["pokemons"].items():
+                if key in result:
+                    result[key] += value
+                else:
+                    result[key] = value
+        return result
+
+    def get_most_cards(self, decks: List[Dict]) -> List[str]:
+        merged_decks = self.merge_and_sum_decks(decks)
+        if merged_decks and len(merged_decks) > 0:
+            most = max(merged_decks.values())
+            return [key for key, value in merged_decks.items() if value == most]
+        else:
+            return []
+
     def transform_recipes_documents(
-        self, deck_recipes: List[Dict[str, List]]
+        self, deck_recipes: Dict[str, List]
     ) -> List[Dict[str, List]]:
         """Transform deck recipes to db format: document"""
         documents = []
-        for deck_recipe in deck_recipes:
-            categ = list(deck_recipe.keys())[0]
-            decks = deck_recipe[categ]
-            feature = self.get_intersection_cards(decks)
+        for categ, decks in deck_recipes.items():
+            print(categ)
+            print(decks)
+            feature = self.get_most_cards(decks)
             documents.append({"name": categ, "feature": feature})
 
         return documents
 
-    def init_category(self, deck_recipes: List[Dict[str, List]]):
+    def init_category(self, deck_recipes: Dict[str, List]):
         """init and save category db to local"""
         self.category_db = TinyDB(
             self.category_db_path, indent=4, ensure_ascii=False
@@ -117,7 +159,7 @@ class DeckCategorizer:
             self.category_db_path, indent=4, ensure_ascii=False
         )
 
-    def update(self, deck_recipes: List[Dict[str, List]]):
+    def update(self, deck_recipes: Dict[str, List]):
         """update db from input deck recipes"""
         if self.category_db is None:
             self.init_category(deck_recipes)
@@ -190,6 +232,5 @@ if __name__ == "__main__":
         },
     }
 
-    categorizer.update(deck_recipes)
     ret = categorizer(example_deck)
     print(ret)

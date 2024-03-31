@@ -260,7 +260,7 @@ def crawl_deck_from_recipe_page(
 
 
 def crawl_recipe_pages(
-    page_start: int,
+    page_start: int = 1,
     num_pages: int = 1,
     card_db: str = "db/ptcg_card.db",
 ) -> Dict[str, List]:
@@ -277,7 +277,10 @@ def crawl_recipe_pages(
     try:
         conn = sqlite3.connect(card_db)
         cursor = conn.cursor()
-    except:
+        logger.info(f"Load card db {card_db} success!")
+    except Exception as e:
+        logger.info(f"Load card db {card_db} FAIL!")
+        logger.info(str(e))
         conn = None
         cursor = None
 
@@ -326,27 +329,41 @@ def crawl_recipe_pages(
 if __name__ == "__main__":
     from pprint import pprint
 
-    print("crawl_from_gym_page")
-    t1 = time.time()
-    gym_decks = crawl_from_gym_page(
-        "https://pokecabook.com/archives/110398", progress_bar=True
-    )
-    t2 = time.time()
-    pprint(gym_decks)
-    print(f"time diff: {t2-t1}\n")
+    # print("crawl_from_gym_page")
+    # t1 = time.time()
+    # gym_decks = crawl_from_gym_page(
+    #     "https://pokecabook.com/archives/110398", progress_bar=True
+    # )
+    # t2 = time.time()
+    # pprint(gym_decks)
+    # print(f"time diff: {t2-t1}\n")
 
-    print("crawl_gym_decks")
-    t1 = time.time()
-    gym_decks = crawl_gym_decks(
-        1, progress_bar_lv1=True, progress_bar_lv2=True
-    )
-    t2 = time.time()
-    pprint(gym_decks)
-    print(f"time diff: {t2-t1}")
+    # print("crawl_gym_decks")
+    # t1 = time.time()
+    # gym_decks = crawl_gym_decks(
+    #     1, progress_bar_lv1=True, progress_bar_lv2=True
+    # )
+    # t2 = time.time()
+    # pprint(gym_decks)
+    # print(f"time diff: {t2-t1}")
 
-    print("crawl_deck_recipe")
+    # print("crawl_deck_recipe")
+    # t1 = time.time()
+    # deck_recipes = crawl_recipe_pages(1)
+    # t2 = time.time()
+    # pprint(deck_recipes)
+    # print(f"time diff: {t2-t1}")
+
+    print("crawl_deck_from_recipe_page")
     t1 = time.time()
-    deck_recipes = crawl_recipe_pages(1)
+    # TODO: debug:
+    # 古代バレット: https://pokecabook.com/archives/94751
+    # タケルライコex: https://pokecabook.com/archives/93261
+    # テツノブジンex: https://pokecabook.com/archives/69436
+    # サーナイトex: https://pokecabook.com/archives/33500
+    # ギラティナVSTAR: https://pokecabook.com/archives/7167
+    # ロストバレット: https://pokecabook.com/archives/7905
+    deck_recipe = crawl_deck_from_recipe_page("test", "https://pokecabook.com/archives/94751")
     t2 = time.time()
-    pprint(deck_recipes)
+    pprint(deck_recipe)
     print(f"time diff: {t2-t1}")
