@@ -18,7 +18,7 @@ from tqdm import tqdm
 sys.path.append(".")
 from pokeca_rec.src.deck_crawler import crawl_deck
 from pokeca_rec.utils.chrome_option import chrome_opt
-from pokeca_rec.utils.selenium_helper import find_element, find_elements
+from pokeca_rec.utils.selenium_helper import find_elements
 
 # Create logging folder
 LOG_FOLDER = "logs"
@@ -228,7 +228,7 @@ def crawl_gym_decks(
 
 def crawl_deck_from_recipe_page(
     recipe: str, url: str, deck_limits: int = 10, cursor: Cursor = None
-):
+) -> Dict[str, List]:
     deck_recipes = defaultdict(list)
 
     with webdriver.Chrome(options=chrome_opt) as driver:
@@ -263,14 +263,11 @@ def crawl_recipe_pages(
     page_start: int,
     num_pages: int = 1,
     card_db: str = "db/ptcg_card.db",
-):
+) -> Dict[str, List]:
 
     def get_recipe_name(title: str):
         match = re.search(r"【(.*?)】", title)
-
-        # Check if a match was found
         if match:
-            # The first group captures the text between '【' and '】'
             extracted_text = match.group(1)
             return extracted_text
         else:
@@ -337,6 +334,7 @@ if __name__ == "__main__":
     t2 = time.time()
     pprint(gym_decks)
     print(f"time diff: {t2-t1}\n")
+
     print("crawl_gym_decks")
     t1 = time.time()
     gym_decks = crawl_gym_decks(
