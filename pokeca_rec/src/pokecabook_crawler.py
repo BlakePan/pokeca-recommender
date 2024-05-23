@@ -8,6 +8,7 @@ import traceback
 from collections import defaultdict
 from sqlite3 import Connection, Cursor
 from typing import Dict, List
+from datetime import datetime
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -124,7 +125,8 @@ def crawl_from_gym_page(
 
 def crawl_gym_decks(
     page_start: int,
-    num_pages: int = 1,
+    num_pages: int = None,
+    day_range: int = None,
     progress_bar_lv1: bool = False,
     progress_bar_lv2: bool = False,
     card_db: str = "db/ptcg_card.db",
@@ -144,6 +146,7 @@ def crawl_gym_decks(
                                            for this level. Defaults to False.
         progress_bar_lv2 (bool, optional): Set True to turn on progress bar
                                            for deeper level. Defaults to False.
+        day_range (int, optional): How many days to parse. Defaults to 1.
 
     Returns:
         Dict[str, Dict[str, List[Dict]]]: A dictionary with gym dates as keys.
@@ -161,10 +164,33 @@ def crawl_gym_decks(
     ), f"""assume page_start is int but got type: {type(page_start)}.
     assuem page_start >= 1 but got: {page_start}"""
 
-    assert (
+    assert (isinstance(num_pages, int) and num_pages >= 1) or (
+        (isinstance(day_range, int) and day_range >= 1)
+    ), f"""assume num_pages or day_range is int but got type: 
+    num_pages: {type(num_pages)}, day_range: {type(day_range)}.
+    assuem num_pages or day_range >= 1 but got: 
+    num_pages: {num_pages}, day_range: {day_range}"""
+
+    if (
+        isinstance(day_range, int)
+        and day_range >= 1
+        and isinstance(num_pages, int)
+        and num_pages >= 1
+    ):
+        # both day_range and num_pages are valid
+        # set day_range as higher priority
+        num_pages = None
+
+    if (not isinstance(num_pages, int) or num_pages < 1) and (
+        isinstance(day_range, int) and day_range >= 1
+    ):
+        # only use day_range as criterion
+        num_pages = 404404
+    elif (not isinstance(day_range, int) or day_range < 1) and (
         isinstance(num_pages, int) and num_pages >= 1
-    ), f"""assume num_pages is int but got type: {type(num_pages)}.
-    assuem num_pages >= 1 but got: {num_pages}"""
+    ):
+        # only use num_pages as criterion
+        day_range = 404404
 
     # connect to card db
     try:
@@ -176,6 +202,7 @@ def crawl_gym_decks(
         cursor = None
         logger.info(f"Load card db: {card_db} FAIL!")
 
+    first_date = None
     gym_decks = {}
     url = (
         "https://pokecabook.com/archives/category/tournament/jim-battle/page/"
@@ -187,13 +214,10 @@ def crawl_gym_decks(
             driver.implicitly_wait(2)  # seconds
             try:
                 driver.get(url_)
-                list_items = WebDriverWait(driver, 10).until(
-                    EC.visibility_of_all_elements_located(
-                        (
-                            By.CLASS_NAME,
-                            "entry-card-wrap.a-wrap.border-element.cf",
-                        )
-                    )
+                list_items = find_elements(
+                    driver,
+                    By.CLASS_NAME,
+                    "entry-card-wrap.a-wrap.border-element.cf",
                 )
                 for list_item in tqdm(
                     list_items,
@@ -201,24 +225,32 @@ def crawl_gym_decks(
                     disable=not progress_bar_lv1,
                 ):
                     gym_page_url = list_item.get_attribute("href")
-                    gym_date = (
-                        WebDriverWait(list_item, 10)
-                        .until(
-                            EC.presence_of_element_located(
-                                (By.CLASS_NAME, "entry-date")
-                            )
-                        )
-                        .text
-                    )
+                    gym_date = find_elements(
+                        list_item, By.CLASS_NAME, "entry-date"
+                    )[0].text
+
+                    if not first_date:
+                        first_date = datetime.strptime(gym_date, "%Y.%m.%d")
+                    gym_date_ = datetime.strptime(gym_date, "%Y.%m.%d")
+                    delta = first_date - gym_date_
+                    if delta.days > day_range:
+                        break
+
                     gym_decks[gym_date] = crawl_from_gym_page(
                         gym_page_url,
                         progress_bar=progress_bar_lv2,
                         cursor=cursor,
                     )
+
             except Exception as e:
                 logger.info(f"An error occurred crawl_gym_decks: {e}")
                 logger.debug(e)
                 logger.debug(traceback.format_exc())
+
+        # check if parse enough days
+        delta = first_date - gym_date_
+        if delta.days > day_range:
+            break
 
     if isinstance(conn, Connection):
         conn.close()
@@ -338,14 +370,17 @@ if __name__ == "__main__":
     # pprint(gym_decks)
     # print(f"time diff: {t2-t1}\n")
 
-    # print("crawl_gym_decks")
-    # t1 = time.time()
-    # gym_decks = crawl_gym_decks(
-    #     1, progress_bar_lv1=True, progress_bar_lv2=True
-    # )
-    # t2 = time.time()
+    print("crawl_gym_decks")
+    t1 = time.time()
+    gym_decks = crawl_gym_decks(
+        1,
+        day_range=1,
+        progress_bar_lv1=True,
+        progress_bar_lv2=False,
+    )
+    t2 = time.time()
     # pprint(gym_decks)
-    # print(f"time diff: {t2-t1}")
+    print(f"time diff: {t2-t1}")
 
     # print("crawl_deck_recipe")
     # t1 = time.time()
@@ -354,16 +389,16 @@ if __name__ == "__main__":
     # pprint(deck_recipes)
     # print(f"time diff: {t2-t1}")
 
-    print("crawl_deck_from_recipe_page")
-    t1 = time.time()
-    # TODO: debug:
-    # 古代バレット: https://pokecabook.com/archives/94751
-    # タケルライコex: https://pokecabook.com/archives/93261
-    # テツノブジンex: https://pokecabook.com/archives/69436
-    # サーナイトex: https://pokecabook.com/archives/33500
-    # ギラティナVSTAR: https://pokecabook.com/archives/7167
-    # ロストバレット: https://pokecabook.com/archives/7905
-    deck_recipe = crawl_deck_from_recipe_page("test", "https://pokecabook.com/archives/94751")
-    t2 = time.time()
-    pprint(deck_recipe)
-    print(f"time diff: {t2-t1}")
+    # print("crawl_deck_from_recipe_page")
+    # t1 = time.time()
+    # # TODO: debug:
+    # # 古代バレット: https://pokecabook.com/archives/94751
+    # # タケルライコex: https://pokecabook.com/archives/93261
+    # # テツノブジンex: https://pokecabook.com/archives/69436
+    # # サーナイトex: https://pokecabook.com/archives/33500
+    # # ギラティナVSTAR: https://pokecabook.com/archives/7167
+    # # ロストバレット: https://pokecabook.com/archives/7905
+    # deck_recipe = crawl_deck_from_recipe_page("test", "https://pokecabook.com/archives/94751")
+    # t2 = time.time()
+    # pprint(deck_recipe)
+    # print(f"time diff: {t2-t1}")
