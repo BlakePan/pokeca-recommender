@@ -10,9 +10,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-import sys
-from pathlib import Path
-sys.path.append('.')
 from pokeca_rec.utils.chrome_option import chrome_opt
 
 EMPTY_STR = "NaN"
@@ -405,9 +402,9 @@ if __name__ == "__main__":
         "https://www.pokemon-card.com/card-search/details.php/card/44950/regu/XY",  # basic energy # noqa: E501
     ]
     
-    extractor = PTCGProductCrawler()
+    crawler = PTCGProductCrawler()
 
     for url in urls:
-        detail_info = extractor(url)
+        detail_info = crawler(url)
         print(detail_info)
         print()

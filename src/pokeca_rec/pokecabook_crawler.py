@@ -16,8 +16,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from tqdm import tqdm
 
-sys.path.append(".")
-from pokeca_rec.src.deck_crawler import crawl_deck
+from pokeca_rec.deck_crawler import crawl_deck
 from pokeca_rec.utils.chrome_option import chrome_opt
 from pokeca_rec.utils.selenium_helper import find_elements
 
@@ -361,14 +360,14 @@ def crawl_recipe_pages(
 if __name__ == "__main__":
     from pprint import pprint
 
-    # print("crawl_from_gym_page")
-    # t1 = time.time()
-    # gym_decks = crawl_from_gym_page(
-    #     "https://pokecabook.com/archives/110398", progress_bar=True
-    # )
-    # t2 = time.time()
-    # pprint(gym_decks)
-    # print(f"time diff: {t2-t1}\n")
+    print("crawl_from_gym_page")
+    t1 = time.time()
+    gym_decks = crawl_from_gym_page(
+        "https://pokecabook.com/archives/110398", progress_bar=True
+    )
+    t2 = time.time()
+    pprint(gym_decks)
+    print(f"time diff: {t2-t1}\n")
 
     print("crawl_gym_decks")
     t1 = time.time()
@@ -379,26 +378,26 @@ if __name__ == "__main__":
         progress_bar_lv2=False,
     )
     t2 = time.time()
-    # pprint(gym_decks)
+    pprint(gym_decks)
     print(f"time diff: {t2-t1}")
 
-    # print("crawl_deck_recipe")
-    # t1 = time.time()
-    # deck_recipes = crawl_recipe_pages(1)
-    # t2 = time.time()
-    # pprint(deck_recipes)
-    # print(f"time diff: {t2-t1}")
+    print("crawl_recipe_pages")
+    t1 = time.time()
+    deck_recipes = crawl_recipe_pages(1)
+    t2 = time.time()
+    pprint(deck_recipes)
+    print(f"time diff: {t2-t1}")
 
-    # print("crawl_deck_from_recipe_page")
-    # t1 = time.time()
-    # # TODO: debug:
-    # # 古代バレット: https://pokecabook.com/archives/94751
-    # # タケルライコex: https://pokecabook.com/archives/93261
-    # # テツノブジンex: https://pokecabook.com/archives/69436
-    # # サーナイトex: https://pokecabook.com/archives/33500
-    # # ギラティナVSTAR: https://pokecabook.com/archives/7167
-    # # ロストバレット: https://pokecabook.com/archives/7905
-    # deck_recipe = crawl_deck_from_recipe_page("test", "https://pokecabook.com/archives/94751")
-    # t2 = time.time()
-    # pprint(deck_recipe)
-    # print(f"time diff: {t2-t1}")
+    print("crawl_deck_from_recipe_page")
+    t1 = time.time()
+    # TODO: debug:
+    # 古代バレット: https://pokecabook.com/archives/94751
+    # タケルライコex: https://pokecabook.com/archives/93261
+    # テツノブジンex: https://pokecabook.com/archives/69436
+    # サーナイトex: https://pokecabook.com/archives/33500
+    # ギラティナVSTAR: https://pokecabook.com/archives/7167
+    # ロストバレット: https://pokecabook.com/archives/7905
+    deck_recipe = crawl_deck_from_recipe_page("test", "https://pokecabook.com/archives/94751")
+    t2 = time.time()
+    pprint(deck_recipe)
+    print(f"time diff: {t2-t1}")

@@ -16,8 +16,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 from tqdm import tqdm
 
-sys.path.append(".")
-from pokeca_rec.src.deck_crawler import crawl_deck
+from pokeca_rec.deck_crawler import crawl_deck
 from pokeca_rec.utils.chrome_option import chrome_opt
 from pokeca_rec.utils.font import full2half
 from pokeca_rec.utils.selenium_helper import find_elements, wait_invisibility

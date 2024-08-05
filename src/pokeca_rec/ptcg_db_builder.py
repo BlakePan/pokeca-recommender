@@ -20,8 +20,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from tqdm import tqdm
 
-sys.path.append(".")
-from pokeca_rec.src.ptcg_product_crawler import (
+from pokeca_rec.ptcg_product_crawler import (
     NOT_UNIQUE_COLS,
     PTCGProductCrawler,
 )
@@ -339,7 +338,7 @@ if __name__ == "__main__":
             "python",
             "./scripts/read_db.py",
             "-db",
-            f"./test.db",
+            "./test.db",
             "-t",
             "test",
             "--limit",

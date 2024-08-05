@@ -19,7 +19,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from tqdm import tqdm
 
-sys.path.append(".")
 from pokeca_rec.utils.chrome_option import chrome_opt
 
 # Create logging folder
