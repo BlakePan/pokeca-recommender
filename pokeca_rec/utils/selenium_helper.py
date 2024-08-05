@@ -10,13 +10,13 @@ def find_elements(driver, by, item, wait_time:int = 10):
 
 
 def find_element(driver, by, item, wait_time: int = 10):
-    WebDriverWait(driver, wait_time).until(
+    return WebDriverWait(driver, wait_time).until(
         EC.visibility_of_element_located((by, item))
     )
 
 
 def find_element_clickable(driver, by, item, wait_time: int = 10):
-    WebDriverWait(driver, wait_time).until(
+    return WebDriverWait(driver, wait_time).until(
         EC.element_to_be_clickable((by, item))
     )
 
